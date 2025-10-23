@@ -578,7 +578,7 @@ graph TB
 ### **Namespace Organization**
 
 1. **frontend:** Next.js (3 pods), Streamlit (2 pods), Chatbot (3 pods)  
-2. **api:** Kong (3 pods), GraphQL (2 pods)  
+2. **api:** Kong (3 pods)  
 3. **services:** Ingestion, Document, Eligibility, Decision, Integration, Notification (2-5 pods each)  
 4. **ai:** Llama 3 70B with vLLM (2 GPU pods), Embedding service (2 pods), LangGraph (3 pods)  
 5. **data:** PostgreSQL (3 pods), Neo4j (5 pods), Redis (3 pods), MinIO (4 pods)  
@@ -593,248 +593,69 @@ graph TB
 * **Cluster Autoscaler:** Adds/removes nodes based on pending pods (2-5 min scale-up, 10 min scale-down)  
 * **Custom Metrics:** Kafka lag, LLM queue depth, database connection pool
 
-## **3.3 CI/CD Pipeline (6-Stage GitLab Pipeline)**
+## **3.3 DevSecOps, CI/CD, and Deployment Strategy**
 
-Comprehensive automated pipeline ensuring quality, security, and reliability at every stage.
+The AI-Powered Social Support Platform follows a DevSecOps-first approach, embedding security, automation, and observability across the delivery pipeline to ensure rapid, reliable, and compliant deployments.
+
+### **Continuous Integration & Delivery Pipeline**
+
+All application components—microservices, web apps, and AI models—are deployed through an automated GitLab CI/CD pipeline integrated with Terraform and Kubernetes.
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#E8F4F8','primaryTextColor':'#1a1a1a','primaryBorderColor':'#2E75B5','lineColor':'#5B9BD5','fontSize':'14px'}}}%%
-graph TB
-    dev["👨‍💻 Developer<br/><small>Git Push to Main/Feature Branch</small>"]
-    
-    dev --> stage1
-    
-    subgraph stage1["🔨 STAGE 1: BUILD & TEST<br/><small>Docker + BuildKit</small>"]
-        direction TB
-        checkout["<b>Checkout Code</b><br/><small>Git SHA: {{ commit }}</small>"]
-        
-        checkout --> build
-        
-        build["<b>Build Application</b><br/><small>• npm install / pip install<br/>• Compile TypeScript<br/>• Generate assets</small>"]
-        
-        build --> test
-        
-        test["<b>Unit Tests</b><br/><small>pytest • Jest • Coverage: 80%+<br/>🛑 GATE: Fails if <80%</small>"]
-        
-        test --> lint
-        
-        lint["<b>Code Quality</b><br/><small>ESLint • Pylint • Black<br/>Type checking</small>"]
-    end
-    
-    lint --> stage2
-    
-    subgraph stage2["🔒 STAGE 2: SECURITY SCANNING<br/><small>Multi-layer Security Validation</small>"]
-        direction TB
-        
-        sast["<b>SAST - SonarQube</b><br/><small>Static Code Analysis<br/>Code smells • Bugs • Vulnerabilities</small>"]
-        
-        sast --> secrets
-        
-        secrets["<b>Secret Detection</b><br/><small>GitLeaks • TruffleHog<br/>Scan for exposed credentials</small>"]
-        
-        secrets --> sca
-        
-        sca["<b>SCA - Snyk</b><br/><small>Dependency Vulnerability Scan<br/>🛑 GATE: Critical/High CVEs block</small>"]
-    end
-    
-    sca --> stage3
-    
-    subgraph stage3["📦 STAGE 3: CONTAINER BUILD<br/><small>Docker + Harbor Registry</small>"]
-        direction TB
-        
-        dockerbuild["<b>Docker Build</b><br/><small>Multi-stage build<br/>Tag: sha-{{ commit }}<br/>Optimize layers</small>"]
-        
-        dockerbuild --> trivy
-        
-        trivy["<b>Container Scan - Trivy</b><br/><small>OS & App vulnerabilities<br/>🛑 GATE: Critical CVEs block</small>"]
-        
-        trivy --> sign
-        
-        sign["<b>Sign & Push</b><br/><small>Cosign signature<br/>Generate SBOM (Syft)<br/>Push to Harbor registry</small>"]
-    end
-    
-    sign --> stage4
-    
-    subgraph stage4["🧪 STAGE 4: DEV DEPLOYMENT<br/><small>Kubernetes Dev Namespace</small>"]
-        direction TB
-        
-        deploydv["<b>Deploy to Dev</b><br/><small>Helm / ArgoCD<br/>Auto-sync enabled</small>"]
-        
-        deploydv --> inttest
-        
-        inttest["<b>Integration Tests</b><br/><small>API contract tests (Pact)<br/>Database migrations<br/>End-to-end workflows</small>"]
-    end
-    
-    inttest --> stage5
-    
-    subgraph stage5["🎯 STAGE 5: STAGING VALIDATION<br/><small>Production-like Environment</small>"]
-        direction TB
-        
-        deploystg["<b>Deploy to Staging</b><br/><small>Blue-Green deployment<br/>Full production config</small>"]
-        
-        deploystg --> e2e
-        
-        e2e["<b>E2E Tests - Cypress</b><br/><small>UI automation<br/>User journey validation</small>"]
-        
-        e2e --> dast
-        
-        dast["<b>DAST - OWASP ZAP</b><br/><small>Dynamic security testing<br/>Penetration testing</small>"]
-        
-        dast --> perf
-        
-        perf["<b>Performance Tests - k6</b><br/><small>Load testing: 1000 RPS<br/>Latency: P95 < 3s</small>"]
-    end
-    
-    perf --> approval
-    
-    approval{"<b>Manual Approval</b><br/><small>Tech Lead / DevOps<br/>Review artifacts</small>"}
-    
-    approval -->|"✅ Approved"| stage6
-    approval -->|"❌ Rejected"| rollback1["<b>Rollback</b><br/><small>Don't deploy</small>"]
-    
-    subgraph stage6["🚀 STAGE 6: PRODUCTION DEPLOYMENT<br/><small>Zero-Downtime Blue-Green</small>"]
-        direction TB
-        
-        deployprd["<b>Deploy Green Environment</b><br/><small>Parallel to Blue (current prod)<br/>ArgoCD sync</small>"]
-        
-        deployprd --> smoke
-        
-        smoke["<b>Smoke Tests</b><br/><small>Health checks<br/>Critical API endpoints<br/>Database connectivity</small>"]
-        
-        smoke --> healthcheck
-        
-        healthcheck{"<b>Health Check</b><br/><small>30-min observation</small>"}
-        
-        healthcheck -->|"✅ Healthy"| switchtraffic
-        healthcheck -->|"❌ Unhealthy"| rollback2["<b>Auto-Rollback</b><br/><small>Switch back to Blue<br/>< 30 seconds</small>"]
-        
-        switchtraffic["<b>Switch Traffic</b><br/><small>Istio VirtualService<br/>100% → Green<br/>Blue standby for 24h</small>"]
-    end
-    
-    switchtraffic --> monitoring
-    
-    subgraph monitoring["📊 CONTINUOUS MONITORING"]
-        direction LR
-        
-        prom["<b>Prometheus</b><br/><small>Metrics collection</small>"]
-        elk["<b>ELK Stack</b><br/><small>Log aggregation</small>"]
-        jaeger["<b>Jaeger</b><br/><small>Distributed tracing</small>"]
-        langfuse2["<b>Langfuse</b><br/><small>LLM observability</small>"]
-    end
-    
-    rollback1 --> dev
-    rollback2 --> dev
-    
-    style stage1 fill:#E3F2FD,stroke:#1976D2,stroke-width:3px
-    style stage2 fill:#FFEBEE,stroke:#C62828,stroke-width:3px
-    style stage3 fill:#F3E5F5,stroke:#7B1FA2,stroke-width:3px
-    style stage4 fill:#FFF3E0,stroke:#F57C00,stroke-width:3px
-    style stage5 fill:#E8F5E9,stroke:#388E3C,stroke-width:3px
-    style stage6 fill:#E1F5FE,stroke:#0277BD,stroke-width:3px
-    style monitoring fill:#E0F2F1,stroke:#00695C,stroke-width:3px
-    
-    style dev fill:#90CAF9,stroke:#0D47A1,stroke-width:2px
-    style approval fill:#FFE082,stroke:#F57C00,stroke-width:3px
-    style healthcheck fill:#FFE082,stroke:#F57C00,stroke-width:3px
-    
-    style test fill:#64B5F6,stroke:#1565C0,stroke-width:2px
-    style sast fill:#EF5350,stroke:#C62828,stroke-width:2px,color:#fff
-    style sca fill:#EF5350,stroke:#C62828,stroke-width:2px,color:#fff
-    style trivy fill:#AB47BC,stroke:#6A1B9A,stroke-width:2px,color:#fff
-    style dast fill:#66BB6A,stroke:#2E7D32,stroke-width:2px,color:#fff
-    style switchtraffic fill:#4FC3F7,stroke:#01579B,stroke-width:3px,color:#fff
-    
-    style rollback1 fill:#FFAB91,stroke:#D84315,stroke-width:2px
-    style rollback2 fill:#FFAB91,stroke:#D84315,stroke-width:2px
+graph LR
+    dev["👨‍💻 Developer<br/><small>Git Commit & Push</small>"]
+    build["🔨 Build & Test<br/><small>Unit + Integration Tests</small>"]
+    security["🛡️ Security Scan<br/><small>SAST + DAST + Dependency Scan</small>"]
+    deploy["🚀 Deploy<br/><small>Dev → Staging → Prod</small>"]
+    monitor["📊 Monitor<br/><small>ELK • Prometheus • Grafana</small>"]
+
+    dev --> build --> security --> deploy --> monitor
 ```
 
-| Stage | Actions | Tools |
+### **Pipeline Overview**
+
+| Stage | Key Activities | Tools |
 | ----- | ----- | ----- |
-| **1. Build** | Compile code and dependencies Build Docker images Tag with Git commit SHA | Docker, BuildKit, npm, pip |
-| **2. Test** | Unit tests (80% coverage required) Integration tests API contract tests | pytest, Jest, Pact |
-| **3. Security Scan** | SAST: Static code analysis SCA: Dependency vulnerability scan Container image scan Secret detection | SonarQube, Snyk, Trivy, GitLeaks |
-| **4. Push** | Push images to Harbor registry Sign images with Cosign Generate SBOM | Harbor, Cosign, Syft |
-| **5. Deploy** | Deploy to staging (auto) Run E2E tests Deploy to prod (manual approval) Blue-green deployment | ArgoCD, Helm, Cypress |
-| **6. Verify** | Smoke tests in production Health check monitoring Auto-rollback if failures DAST: Dynamic security scan | k6, OWASP ZAP |
+| **Build & Test** | Install dependencies, run unit/integration tests (min 70% coverage), static code analysis | Docker, npm, pip, PyTest, Jest, ESLint |
+| **Security Scan** | Perform vulnerability scans, detect secrets, container image scanning | Snyk, Trivy, GitLab SAST/DAST |
+| **Deploy** | Automated deployment to dev and staging; manual approval for production | GitLab CI/CD, Terraform, Helm, Kubernetes |
+| **Monitor** | Centralized logging, tracing, and AI observability | ELK Stack, Prometheus, Grafana, Langfuse |
 
-**Pipeline Gates:**
+### **Infrastructure as Code (IaC)**
 
-* Stage 2: Pipeline stops if test coverage < 80%  
-* Stage 3: Pipeline stops if critical/high vulnerabilities found  
-* Stage 5: Manual approval required for production deployment  
-* Stage 6: Auto-rollback within 5 minutes if health checks fail
+All infrastructure is defined and version-controlled through Terraform for consistent, repeatable deployments across environments.
 
-## **3.4 Infrastructure as Code (IaC) Strategy**
+**Scope includes:**
+- Kubernetes clusters (RKE2 / AKS)
+- PostgreSQL and Redis instances
+- Network and IAM configuration (Keycloak, Vault)
+- Monitoring stack (Prometheus, ELK)
 
-All infrastructure components are defined as code for consistency, repeatability, and version control.
+This ensures environment parity and reduces human error during provisioning.
 
-### **Terraform Configuration**
+### **Deployment Strategy**
 
-**Primary IaC Tool:** Terraform 1.6+ with HashiCorp Cloud Platform (HCP) for state management
+The platform uses a **Blue-Green Deployment** model to achieve zero downtime during releases.
 
-**Module Structure:**
+- **Blue environment:** currently serving production traffic
+- **Green environment:** new version deployed and validated
+- Upon successful smoke tests, traffic is switched to Green via Istio VirtualService routing
 
-* **compute/:** VM provisioning, GPU node configuration, auto-scaling groups  
-* **networking/:** VPCs, subnets, security groups, load balancers, ExpressRoute  
-* **kubernetes/:** Cluster provisioning via Rancher RKE2, node pools, storage classes  
-* **data/:** Database instances, replication config, backup policies  
-* **security/:** Keycloak deployment, Vault cluster, certificate management  
-* **monitoring/:** ELK Stack, Prometheus, Grafana, alerting rules
+For critical AI model updates, a lightweight **Gradual Deployment** is supported:
+- New model serves 10% of requests for 24 hours
+- Promoted manually if accuracy and latency meet defined thresholds
 
-**State Management:**
+**Rollback:** If deployment health checks fail (error rate > 0.1%, latency spike > 50%), the pipeline automatically reverts to the previous stable version.
 
-* Remote backend: Azure Blob Storage with state locking  
-* Separate state files per environment (dev, staging, prod)  
-* Encryption at rest with Azure-managed keys
+### **Monitoring and Observability**
 
-### **Ansible Configuration Management**
+- **Logs:** Centralized in ELK Stack for audit and compliance
+- **Metrics:** Collected via Prometheus and visualized in Grafana dashboards
+- **Traces:** Captured through Jaeger for distributed tracing
+- **AI Observability:** Key metrics like LLM response time, confidence scores, and error rates monitored via Langfuse
 
-**Secondary Tool:** Ansible 2.15+ for configuration management and application deployment
 
-**Playbook Organization:**
-
-* **system-hardening.yml:** OS security baseline, CIS benchmarks, firewall rules  
-* **docker-setup.yml:** Docker engine, containerd, registry authentication  
-* **k8s-join.yml:** Worker node joining, kubelet configuration  
-* **monitoring-agents.yml:** Node exporter, Filebeat, Jaeger agent  
-* **database-setup.yml:** PostgreSQL configuration, Neo4j tuning, Redis cluster
-
-## **3.5 Deployment Strategy**
-
-### **Blue-Green Deployment**
-
-**Primary Strategy:** Zero-downtime deployments with instant rollback capability
-
-**Process:**
-
-7. **Blue Environment:** Current production serving 100% traffic  
-8. **Green Environment:** Deploy new version alongside blue, run smoke tests  
-9. **Traffic Switch:** Update Istio VirtualService to route 100% to green  
-10. **Monitoring Window:** 30-minute observation for errors, latency, failures  
-11. **Rollback if Needed:** Instant switch back to blue (< 30 seconds)
-
-**Implementation:**
-
-* Tool: ArgoCD with automated sync  
-* Traffic Management: Istio VirtualService weight-based routing  
-* Health Checks: Kubernetes liveness/readiness probes with custom endpoints
-
-### **Canary Deployment (for High-Risk Changes)**
-
-**Secondary Strategy:** Gradual rollout for AI model updates and critical services
-
-**Progressive Traffic Split:**
-
-1. **Phase 1:** 5% traffic to canary version for 2 hours  
-2. **Phase 2:** 25% traffic for 6 hours (if metrics stable)  
-3. **Phase 3:** 50% traffic for 12 hours  
-4. **Phase 4:** 100% traffic (full rollout)
-
-**Automated Promotion/Rollback:**
-
-* Metrics Evaluated: Error rate, latency (P95), AI confidence scores, throughput  
-* Success Criteria: Error rate < 0.1%, P95 latency < 3s, confidence score > 88%  
-* Auto-rollback: Triggered if any metric exceeds threshold for > 10 minutes
 
 # **4. Zero Trust Security Architecture (Enhanced)**
 
@@ -989,7 +810,7 @@ Comprehensive data classification scheme ensuring appropriate security controls 
 **Data Lineage & Provenance:**
 * Every RESTRICTED/CONFIDENTIAL data point tagged with: `source_system`, `classification_level`, `access_timestamp`, `processed_by_user_id`
 * Full audit trail stored in ELK Stack with 7-year retention (immutable)
-* Apache Atlas maintains data lineage graph for compliance reporting
+* Data lineage tracking for compliance reporting
 
 ### **PII Detection & Masking Strategy**
 
@@ -1268,11 +1089,11 @@ Comprehensive tracking of data flow from source to decision for auditability and
    2. Full audit trail stored in immutable S3 WORM storage for 7 years  
    3. Ability to reconstruct exact decision reasoning from archived artifacts
 
-### **Implementation: Apache Atlas Integration**
+### **Implementation: Data Lineage Tracking**
 
-* **Metadata Repository:** Apache Atlas stores entities, relationships, lineage graphs  
-* **Kafka Integration:** Atlas hooks consume Kafka events for automatic lineage capture  
-* **Visualization:** Atlas UI provides interactive lineage graphs from source to decision  
+* **Metadata Repository:** PostgreSQL stores entities, relationships, lineage data  
+* **Kafka Integration:** Event hooks capture automatic lineage data  
+* **Visualization:** Custom dashboard provides lineage graphs from source to decision  
 * **API Access:** REST API for programmatic lineage queries by case officers
 
 # **6. Advanced AI Agentic System**
@@ -1485,23 +1306,23 @@ Development → (Unit Tests + Validation) → Staging → (A/B Test 10% traffic)
 
 ### **A/B Testing & Model Promotion**
 
-**Canary Deployment Strategy:**
-* **Phase 1 (10% traffic):** New model serves 10% of applications for 48 hours
+**Gradual Deployment Strategy:**
+* **Phase 1 (10% traffic):** New model serves 10% of applications for 24 hours
 * **Metrics Comparison:** Accuracy, latency (P95), confidence scores, HITL rate
 * **Success Criteria:**
-  * Accuracy improvement ≥ 5% (e.g., 92% → 97%)
-  * Latency increase ≤ 10% (acceptable tradeoff)
-  * HITL rate decrease ≥ 3% (fewer escalations = better confidence)
+  * Accuracy improvement ≥ 3% (e.g., 92% → 95%)
+  * Latency increase ≤ 15% (acceptable tradeoff)
+  * HITL rate decrease ≥ 2% (fewer escalations = better confidence)
   * No critical errors or failures
 
-**Automated Promotion Pipeline:**
+**Manual Promotion Pipeline:**
 ```python
 # Pseudo-code for model promotion logic
-if new_model.accuracy > current_model.accuracy + 0.05:
-    if new_model.p95_latency < current_model.p95_latency * 1.1:
+if new_model.accuracy > current_model.accuracy + 0.03:
+    if new_model.p95_latency < current_model.p95_latency * 1.15:
         if new_model.error_rate < 0.001:
-            promote_to_production(new_model)
-            archive_model(current_model, retention_days=90)
+            # Manual approval required
+            request_approval_for_promotion(new_model)
         else:
             rollback_to_current(current_model)
             notify_ml_team("High error rate detected")
